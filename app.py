@@ -1,15 +1,20 @@
 # app.py  – Gestor iFood (indentação padronizada, ASCII puro)
 import os, hmac, hashlib, datetime
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
 from flask import Flask, render_template, request, abort
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime 
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # --- configuração 
 app = Flask(__name__)
+admin = Admin(app, name="Painel de Pedidos", template_mode="bootstrap4")
+admin.add_view(ModelView(Pedido, session))
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
+session = SessionLocal()
 Base = declarative_base()
 
 # --- modelo 
