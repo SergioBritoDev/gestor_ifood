@@ -44,16 +44,14 @@ class AdminUser(UserMixin, db.Model):
     password = db.Column(db.String(80), nullable=False)
 
 class Produto(db.Model):
-class Produto(db.Model):
-    id            = db.Column(db.Integer, primary_key=True)
-    nome          = db.Column(db.String(100), nullable=False)
-    preco         = db.Column(db.Float, nullable=False)
-    categoria     = db.Column(db.String(50))
-    descricao     = db.Column(db.Text)
-    imagem_url    = db.Column(db.String(255))  # Link da imagem
-    ficha_tecnica = db.Column(db.Text)         # Pode ser um texto explicativo ou JSON
-    pdv_id        = db.Column(db.String(50))   # ID de referência no sistema iFood
-    
+    id           = db.Column(db.Integer, primary_key=True)
+    nome         = db.Column(db.String(100), nullable=False)
+    categoria    = db.Column(db.String(100), nullable=False)
+    descricao    = db.Column(db.Text)
+    imagem       = db.Column(db.String(255))
+    ficha_tecnica = db.Column(db.Text)
+    pdv          = db.Column(db.String(100))
+
     def __repr__(self):
         return f"<Produto {self.nome}>"
 
