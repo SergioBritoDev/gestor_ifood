@@ -1,12 +1,12 @@
-# app.py  – Gestor iFood (indentação padronizada)
+# app.py  – Gestor iFood (indentação padronizada, ASCII puro)
 import os, hmac, hashlib, datetime
 from flask import Flask, render_template, request, abort
 from sqlalchemy import create_engine, Column, Integer, String, Float, 
 DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# ────────────────────────────── 
-configuração ──────────────────────────────
+# --- configuração 
+-----------------------------------------------------------
 app = Flask(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -14,8 +14,8 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# ──────────────────────────────── modelos 
-─────────────────────────────────
+# --- modelo 
+-----------------------------------------------------------------
 class Pedido(Base):
     __tablename__ = "pedidos"
 
@@ -32,8 +32,8 @@ class Pedido(Base):
 
 Base.metadata.create_all(engine)
 
-# ──────────────────────────────── rotas 
-───────────────────────────────────
+# --- rotas 
+------------------------------------------------------------------
 @app.route("/")
 def index():
     return "Gestor iFood online!"
@@ -44,7 +44,8 @@ def lista_pedidos():
     pedidos = sess.query(Pedido).order_by(Pedido.data_hora.desc()).all()
     return render_template("pedidos.html", pedidos=pedidos)
 
-# ────────── helper assinatura ──────────
+# --- helper de assinatura 
+---------------------------------------------------
 def assinatura_valida(req):
     secret = os.environ["IFOOD_WEBHOOK_SECRET"].encode()
     corpo  = req.data
@@ -52,7 +53,8 @@ def assinatura_valida(req):
     recv   = req.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
     return hmac.compare_digest(calc, recv)
 
-# ────────── webhook ──────────
+# --- webhook 
+----------------------------------------------------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if not assinatura_valida(request):
@@ -94,8 +96,8 @@ datetime.datetime.utcnow().isoformat())
     sess.commit()
     return "", 204
 
-# ──────────────────────────────── local 
-run ───────────────────────────────
+# --- execução local 
+---------------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
 
