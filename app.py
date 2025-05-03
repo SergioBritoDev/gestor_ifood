@@ -1,26 +1,24 @@
-# app.py  – Gestor iFood (indentação padronizada, ASCII puro)
-import os, hmac, hashlib, datetime
+from flask import Flask, request, abort, render_template
+from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
-from flask import Flask, render_template, request, abort
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime 
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
+import datetime, os, hmac, hashlib, json
 
-# --- configuração 
+# Flask e banco
 app = Flask(__name__)
-admin = Admin(app, name="Painel de Pedidos", template_mode="bootstrap4")
-admin.add_view(ModelView(Pedido, session))
+DATABASE_URL = os.environ.get("DATABASE_URL")
+WEBHOOK_SECRET = os.environ.get("IFOOD_WEBHOOK_SECRET")
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine)
-session = SessionLocal()
 Base = declarative_base()
+SessionLocal = sessionmaker(bind=engine)
 
-# --- modelo 
+# Modelo do banco
 class Pedido(Base):
     __tablename__ = "pedidos"
-
     id            = Column(Integer, primary_key=True)
     pedido_id     = Column(String, unique=True, nullable=False)
     data_hora     = Column(DateTime, default=datetime.datetime.utcnow)
@@ -32,70 +30,62 @@ class Pedido(Base):
     taxa_ifood    = Column(Float)
     total_liquido = Column(Float)
 
+# Cria as tabelas se ainda não existem
 Base.metadata.create_all(engine)
 
-# --- rotas 
-@app.route("/")
-def index():
-    return "Gestor iFood online!"
+# Sessão de banco
+session = SessionLocal()
 
-@app.route("/pedidos")
-def lista_pedidos():
-    sess = SessionLocal()
-    pedidos = sess.query(Pedido).order_by(Pedido.data_hora.desc()).all()
-    return render_template("pedidos.html", pedidos=pedidos)
-
-# --- helper de assinatura 
-def assinatura_valida(req):
-    secret = os.environ["IFOOD_WEBHOOK_SECRET"].encode()
-    corpo  = req.data
-    calc   = hmac.new(secret, corpo, hashlib.sha1).hexdigest()
-    recv   = req.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
-    return hmac.compare_digest(calc, recv)
-
-# --- webhook 
+# Rota do webhook
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    if not assinatura_valida(request):
+    signature = request.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
+    payload = request.get_data()
+    hash = hmac.new(WEBHOOK_SECRET.encode(), payload, hashlib.sha1).hexdigest()
+    
+    if not hmac.compare_digest(signature, hash):
         abort(401)
 
-    payload = request.get_json(force=True)
-    sess = SessionLocal()
+    data = json.loads(payload)
+    for order in data.get("orders", []):
+        order_id   = order.get("id")
+        status     = order.get("status")
+        cliente    = order.get("customer", {}).get("name")
+        item       = order.get("items", [{}])[0].get("name")
+        quantidade = order.get("items", [{}])[0].get("quantity")
+        total_bruto = order.get("total", 0)
+        taxa_ifood  = order.get("commission", 0)
+        total_liquido = total_bruto - taxa_ifood
 
-    for order in payload.get("orders", []):
-        order_id = order.get("id")
-        created  = order.get("createdAt", 
-datetime.datetime.utcnow().isoformat())
-        status   = order.get("status", "PLACED")
-        customer = order.get("customer", {}).get("name", "")
-        total    = order.get("total", {}).get("amount", 0)
-        fee      = order.get("commission", {}).get("amount", 0)
-
-        for itm in order.get("items", []):
-            # ignora duplicata (pedido_id + item)
-            if sess.query(Pedido).filter_by(
-                pedido_id=order_id, item=itm.get("name", "")
-            ).first():
-                continue
-
-            p = Pedido(
-                pedido_id   = order_id,
-                data_hora   = datetime.datetime.fromisoformat(
-                              created.replace("Z", "+00:00")),
-                status      = status,
-                cliente     = customer,
-                item        = itm.get("name", ""),
-                quantidade  = itm.get("quantity", 1),
-                total_bruto = total,
-                taxa_ifood  = fee,
-                total_liquido = total - fee,
+        existente = session.query(Pedido).filter_by(pedido_id=order_id).first()
+        if not existente:
+            novo = Pedido(
+                pedido_id     = order_id,
+                data_hora     = datetime.datetime.utcnow(),
+                status        = status,
+                cliente       = cliente,
+                item          = item,
+                quantidade    = quantidade,
+                total_bruto   = total_bruto,
+                taxa_ifood    = taxa_ifood,
+                total_liquido = total_liquido
             )
-            sess.add(p)
-
-    sess.commit()
+            session.add(novo)
+            session.commit()
     return "", 204
 
-# --- execução local 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Página com listagem de pedidos
+@app.route("/pedidos")
+def pedidos():
+    pedidos = session.query(Pedido).order_by(Pedido.data_hora.desc()).all()
+    return render_template("pedidos.html", pedidos=pedidos)
+
+# Painel Admin
+admin = Admin(app, name="Painel de Pedidos", template_mode="bootstrap4")
+admin.add_view(ModelView(Pedido, session))
+
+# Home
+@app.route("/")
+def home():
+    return "Gestor iFood online!"
 
