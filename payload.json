@@ -1,0 +1,15 @@
+{
+  "orders": [
+    {
+      "id": "teste-008",
+      "createdAt": "2025-05-03T12:00:00Z",
+      "status": "PLACED",
+      "customer": { "name": "Cliente Simulado" },
+      "items": [
+        { "name": "Coxinha", "quantity": 2 }
+      ],
+      "total": { "amount": 40 },
+      "commission": { "amount": 8 }
+    }
+  ]
+}

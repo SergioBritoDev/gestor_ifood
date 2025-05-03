@@ -1,139 +1,119 @@
-from flask import Flask, request, abort, render_template
+import os
+import hmac
+import json
+import hashlib
+import datetime
+
+from flask import Flask, request, abort, render_template, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
-import datetime, os, hmac, hashlib, json
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 
-# Flask e banco
+# Configuração inicial
 app = Flask(__name__)
-DATABASE_URL = os.environ.get("DATABASE_URL")
-WEBHOOK_SECRET = os.environ.get("IFOOD_WEBHOOK_SECRET")
+app.secret_key = os.environ.get("SECRET_KEY", "chave-insegura")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-Base = declarative_base()
-SessionLocal = sessionmaker(bind=engine)
+db = SQLAlchemy(app)
 
-# Modelo do banco
-class Pedido(Base):
-    __tablename__ = "pedidos"
-    id            = Column(Integer, primary_key=True)
-    pedido_id     = Column(String, unique=True, nullable=False)
-    data_hora     = Column(DateTime, default=datetime.datetime.utcnow)
-    status        = Column(String)
-    cliente       = Column(String)
-    item          = Column(String)
-    quantidade    = Column(Integer)
-    total_bruto   = Column(Float)
-    taxa_ifood    = Column(Float)
-    total_liquido = Column(Float)
+# Tabela de pedidos
+class Pedido(db.Model):
+    id            = db.Column(db.Integer, primary_key=True)
+    pedido_id     = db.Column(db.String, unique=True, nullable=False)
+    data_hora     = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    status        = db.Column(db.String)
+    cliente       = db.Column(db.String)
+    item          = db.Column(db.String)
+    quantidade    = db.Column(db.Integer)
+    total_bruto   = db.Column(db.Float)
+    taxa_ifood    = db.Column(db.Float)
+    total_liquido = db.Column(db.Float)
 
-# Cria as tabelas se ainda não existem
-Base.metadata.create_all(engine)
+# Tabela de usuário admin
+class AdminUser(UserMixin, db.Model):
+    id       = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(50), nullable=False)
 
-# Sessão de banco
-session = SessionLocal()
-
-# Rota do webhook
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    signature = request.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
-    payload = request.get_data()
-    hash = hmac.new(WEBHOOK_SECRET.encode(), payload, hashlib.sha1).hexdigest()
-    
-    if not hmac.compare_digest(signature, hash):
-        abort(401)
-
-    data = json.loads(payload)
-    for order in data.get("orders", []):
-        order_id   = order.get("id")
-        status     = order.get("status")
-        cliente    = order.get("customer", {}).get("name")
-        item       = order.get("items", [{}])[0].get("name")
-        quantidade = order.get("items", [{}])[0].get("quantity")
-        total_bruto = order.get("total", 0)
-        taxa_ifood  = order.get("commission", 0)
-        total_liquido = total_bruto - taxa_ifood
-
-        existente = session.query(Pedido).filter_by(pedido_id=order_id).first()
-        if not existente:
-            novo = Pedido(
-                pedido_id     = order_id,
-                data_hora     = datetime.datetime.utcnow(),
-                status        = status,
-                cliente       = cliente,
-                item          = item,
-                quantidade    = quantidade,
-                total_bruto   = total_bruto,
-                taxa_ifood    = taxa_ifood,
-                total_liquido = total_liquido
-            )
-            session.add(novo)
-            session.commit()
-    return "", 204
-
-# Página com listagem de pedidos
-@app.route("/pedidos")
-def pedidos():
-    pedidos = session.query(Pedido).order_by(Pedido.data_hora.desc()).all()
-    return render_template("pedidos.html", pedidos=pedidos)
-
-# Painel Admin
-admin = Admin(app, name="Painel de Pedidos", template_mode="bootstrap4")
-class SecureModelView(ModelView):
-    def is_accessible(self):
-        return current_user.is_authenticated
-
-    def inaccessible_callback(self, name, **kwargs):
-        return abort(403)
-
-admin.add_view(SecureModelView(Pedido, session))
-
-from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
-
-# Login básico (usuário fixo)
-login_manager = LoginManager(app)
-login_manager.login_view = "login"
-
-class AdminUser(UserMixin):
-    id = 1
-    username = "Sergio"
-    password = "Semsenha14#"  # Troque por algo mais seguro
-
-    def get_id(self):
-        return str(self.id)
+# Login
+login_manager = LoginManager()
+login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
-    return AdminUser()
+    return AdminUser.query.get(int(user_id))
 
-# Login via formulário HTML simples
+# Painel Admin
+class AuthenticatedModelView(ModelView):
+    def is_accessible(self):
+        return current_user.is_authenticated
+
+admin = Admin(app, name="Gestor iFood", template_mode="bootstrap4")
+admin.add_view(AuthenticatedModelView(Pedido, db.session))
+admin.add_view(AuthenticatedModelView(AdminUser, db.session))
+
+# Rotas
+@app.route("/")
+def index():
+    return "Gestor iFood online!"
+
+@app.route("/pedidos")
+def pedidos():
+    todos = Pedido.query.order_by(Pedido.data_hora.desc()).all()
+    return render_template("pedidos.html", pedidos=todos)
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form["username"] == "Sergio" and request.form["password"] == "Semsenha14#":
-            login_user(AdminUser())
-            return "Logado com sucesso! <a href='/admin'>Ir para o painel</a>"
+        nome = request.form.get("username")
+        senha = request.form.get("password")
+        user = AdminUser.query.filter_by(username=nome, password=senha).first()
+        if user:
+            login_user(user)
+            return redirect("/admin")
         else:
-            return "Credenciais inválidas."
+            return "Credenciais inválidas", 401
     return '''
-    <form method="post">
-        Usuário: <input type="text" name="username"><br>
-        Senha: <input type="password" name="password"><br>
-        <input type="submit" value="Entrar">
-    </form>
+        <form method="post">
+            Usuário: <input name="username"><br>
+            Senha: <input name="password" type="password"><br>
+            <button type="submit">Entrar</button>
+        </form>
     '''
 
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return "Saiu com sucesso! <a href='/login'>Login</a>"
+    return redirect(url_for("login"))
 
-# Home
-@app.route("/")
-def home():
-    return "Gestor iFood online!"
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    secret = os.environ.get("IFOOD_WEBHOOK_SECRET", "")
+    signature = request.headers.get("X-Hub-Signature", "").replace("sha1=", "")
+    body = request.get_data()
+    expected = hmac.new(secret.encode(), body, hashlib.sha1).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        abort(401)
+
+    payload = json.loads(body)
+    for order in payload.get("orders", []):
+        order_id = order.get("id")
+        if not Pedido.query.filter_by(pedido_id=order_id).first():
+            novo = Pedido(
+                pedido_id   = order_id,
+                data_hora   = datetime.datetime.strptime(order["createdAt"], "%Y-%m-%dT%H:%M:%SZ"),
+                status      = order.get("status"),
+                cliente     = order.get("customer", {}).get("name"),
+                item        = order.get("items", [{}])[0].get("name"),
+                quantidade  = order.get("items", [{}])[0].get("quantity"),
+                total_bruto = order.get("price"),
+                taxa_ifood  = order.get("commission"),
+                total_liquido = order.get("price", 0) - order.get("commission", 0)
+            )
+            db.session.add(novo)
+    db.session.commit()
+    return "", 204
 
