@@ -61,20 +61,34 @@ def webhook():
     sess = SessionLocal()
 
     for order in payload.get("orders", []):
-        for itm in order.get("items", []):
-            p = Pedido(
-                pedido_id   = order_id,
-                data_hora   = datetime.datetime.fromisoformat(
-                                created.replace("Z","+00:00")),
-                status      = status,
-                cliente     = customer,
-                item        = itm.get("name", ""),
-                quantidade  = itm.get("quantity", 1),
-                total_bruto = total,
-                taxa_ifood  = fee,
-                total_liquido = total - fee,
-            )
-            sess.add(p)
-            sess.merge(p)            # atualiza se já existir
-    sess.commit()
-    return "", 204
+    # ── variáveis do pedido ─────────────────────────
+    order_id = order.get("id")
+    created  = order.get("createdAt", datetime.datetime.utcnow().isoformat())
+    status   = order.get("status", "PLACED")
+    customer = order.get("customer", {}).get("name", "")
+    total    = order.get("total", {}).get("amount", 0)
+    fee      = order.get("commission", {}).get("amount", 0)
+
+    for itm in order.get("items", []):
+        # ── evita duplicar pedido_id ─────────────────
+        if (
+            sess.query(Pedido)
+            .filter_by(pedido_id=order_id, item=itm.get("name", ""))
+            .first()
+        ):
+            continue  # já registrado → pula
+
+        # ── cria novo registro ───────────────────────
+        p = Pedido(
+            pedido_id   = order_id,
+            data_hora   = datetime.datetime.fromisoformat(
+                          created.replace("Z", "+00:00")),
+            status      = status,
+            cliente     = customer,
+            item        = itm.get("name", ""),
+            quantidade  = itm.get("quantity", 1),
+            total_bruto = total,
+            taxa_ifood  = fee,
+            total_liquido = total - fee,
+        )
+        sess.add(p)
