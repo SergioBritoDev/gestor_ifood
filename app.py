@@ -95,29 +95,43 @@ def listar_pedidos():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    signature = request.headers.get("X-Hub-Signature", "")
-    secret = os.environ.get("SECRET", "")
-    expected_sig = "sha1=" + hmac.new(secret.encode(), request.data, hashlib.sha1).hexdigest()
+    payload = request.get_data()
+    signature = request.headers.get("X-Hub-Signature", "").replace("sha1=", "")
+    secret = b"Semsenha14#"
 
-    if not hmac.compare_digest(signature, expected_sig):
+    expected_signature = hmac.new(secret, payload, hashlib.sha1).hexdigest()
+
+    print("🔐 Assinatura recebida:", signature)
+    print("✅ Assinatura esperada:", expected_signature)
+    print("📦 Payload recebido:", payload.decode("utf-8"))
+
+    if not hmac.compare_digest(signature, expected_signature):
         return "Assinatura inválida", 401
 
-    payload = request.get_json()
-    for order in payload.get("orders", []):
-        order_id = order.get("id")
-        if not Pedido.query.filter_by(pedido_id=order_id).first():
+    data = json.loads(payload)
+
+    for order in data.get("orders", []):
+        order_id = order.get("order_id")
+        cliente = order.get("customer", {}).get("name", "Cliente")
+        for item in order.get("items", []):
+            nome_item = item.get("name")
+            quantidade = item.get("quantity", 1)
+            total = item.get("total", 0)
+
             novo_pedido = Pedido(
                 pedido_id=order_id,
-                data_hora=datetime.now(),
-                cliente=order.get("customer", {}).get("name", "Desconhecido"),
-                item=order.get("items", [{}])[0].get("name", "Item"),
-                quantidade=order.get("items", [{}])[0].get("quantity", 1),
-                total_liquido=order.get("total", {}).get("value", 0) / 100,
+                cliente=cliente,
+                item=nome_item,
+                quantidade=quantidade,
+                total_liquido=total,
                 status="pendente"
             )
             db.session.add(novo_pedido)
-            db.session.commit()
-            socketio.emit("atualizar_pedidos", broadcast=True)
+
+    db.session.commit()
+
+    # Emite para o KDS
+    socketio.emit("novo_pedido", {"pedido_id": order_id})
     return "", 204
 
 ### EXECUÇÃO
