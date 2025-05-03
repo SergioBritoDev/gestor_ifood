@@ -25,17 +25,16 @@ admin = Admin(app, name="Painel Admin", template_mode="bootstrap3")
 
 # Modelos
 class Pedido(db.Model):
-    __tablename__ = "pedidos"
     id = db.Column(db.Integer, primary_key=True)
-    pedido_id = db.Column(db.String, unique=True, nullable=False)
-    status = db.Column(db.String)
-    cliente = db.Column(db.String)
-    item = db.Column(db.String)
+    pedido_id = db.Column(db.String(120), unique=True, nullable=False)
+    data_hora = db.Column(db.DateTime)
+    status = db.Column(db.String(80))
+    cliente = db.Column(db.String(120))
+    item = db.Column(db.String(120))
     quantidade = db.Column(db.Integer)
     total_bruto = db.Column(db.Float)
     taxa_ifood = db.Column(db.Float)
     total_liquido = db.Column(db.Float)
-    data_hora = db.Column(db.DateTime, default=datetime.utcnow)
 
 class AdminUser(UserMixin, db.Model):
     __tablename__ = "admin_user"
@@ -66,6 +65,7 @@ class ProtectedModelView(ModelView):
         return current_user.is_authenticated
 
 admin.add_view(ProtectedModelView(Pedido, db.session))
+admin.add_view(ModelView(Pedido, db.session))
 admin.add_view(ModelView(Produto, db.session))
 
 # Rotas
