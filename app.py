@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # --- configuração 
------------------------------------------------------------
 app = Flask(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -14,7 +13,6 @@ SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
 # --- modelo 
------------------------------------------------------------------
 class Pedido(Base):
     __tablename__ = "pedidos"
 
@@ -32,7 +30,6 @@ class Pedido(Base):
 Base.metadata.create_all(engine)
 
 # --- rotas 
-------------------------------------------------------------------
 @app.route("/")
 def index():
     return "Gestor iFood online!"
@@ -44,7 +41,6 @@ def lista_pedidos():
     return render_template("pedidos.html", pedidos=pedidos)
 
 # --- helper de assinatura 
----------------------------------------------------
 def assinatura_valida(req):
     secret = os.environ["IFOOD_WEBHOOK_SECRET"].encode()
     corpo  = req.data
@@ -53,7 +49,6 @@ def assinatura_valida(req):
     return hmac.compare_digest(calc, recv)
 
 # --- webhook 
-----------------------------------------------------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if not assinatura_valida(request):
@@ -96,7 +91,6 @@ datetime.datetime.utcnow().isoformat())
     return "", 204
 
 # --- execução local 
----------------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
 
