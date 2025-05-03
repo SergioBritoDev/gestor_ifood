@@ -43,6 +43,15 @@ class AdminUser(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(80), nullable=False)
 
+class Produto(db.Model):
+    id       = db.Column(db.Integer, primary_key=True)
+    nome     = db.Column(db.String(100), nullable=False)
+    preco    = db.Column(db.Float, nullable=False)
+    estoque  = db.Column(db.Integer, default=0)
+    
+    def __repr__(self):
+        return f"<Produto {self.nome}>"
+
 # Login
 @login_manager.user_loader
 def load_user(user_id):
@@ -54,6 +63,7 @@ class ProtectedModelView(ModelView):
         return current_user.is_authenticated
 
 admin.add_view(ProtectedModelView(Pedido, db.session))
+admin.add_view(ModelView(Produto, db.session))
 
 # Rotas
 @app.route("/")
