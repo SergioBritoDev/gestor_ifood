@@ -61,18 +61,20 @@ def webhook():
     sess = SessionLocal()
 
     for order in payload.get("orders", []):
-        for itm in order["items"]:
+        for itm in order.get("items", []):
             p = Pedido(
-                pedido_id   = order["id"],
-                data_hora   = datetime.datetime.fromisoformat(order["createdAt"].replace("Z", "+00:00")),
-                status      = order["status"],
-                cliente     = order["customer"]["name"],
-                item        = itm["name"],
-                quantidade  = itm["quantity"],
-                total_bruto = order["total"]["amount"],
-                taxa_ifood  = order["commission"]["amount"],
-                total_liquido = order["total"]["amount"] - order["commission"]["amount"],
+                pedido_id   = order_id,
+                data_hora   = datetime.datetime.fromisoformat(
+                                created.replace("Z","+00:00")),
+                status      = status,
+                cliente     = customer,
+                item        = itm.get("name", ""),
+                quantidade  = itm.get("quantity", 1),
+                total_bruto = total,
+                taxa_ifood  = fee,
+                total_liquido = total - fee,
             )
+            sess.add(p)
             sess.merge(p)            # atualiza se já existir
     sess.commit()
     return "", 204
