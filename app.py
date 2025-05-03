@@ -1,21 +1,30 @@
-# app.py  —  Gestor iFood
+# app.py  – Gestor iFood
+import os, hmac, hashlib, datetime, json
 from flask import Flask, render_template, request, abort
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
-import os, datetime, hmac, hashlib, json
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+)
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-# ───────────────────────────────────────────────────────────────────
-# 1. Configuração básica
+# ─────────────────────────────────────────────────────────────
+# 1. Flask e banco
 app = Flask(__name__)
 
-engine = create_engine(os.environ["DATABASE_URL"])
+DATABASE_URL = os.environ["DATABASE_URL"]
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# ───────────────────────────────────────────────────────────────────
-# 2. Modelo Pedido  (caso ainda não exista em models.py)
+# ─────────────────────────────────────────────────────────────
+# 2. Modelo Pedido
 class Pedido(Base):
     __tablename__ = "pedidos"
+
     id            = Column(Integer, primary_key=True)
     pedido_id     = Column(String, unique=True, nullable=False)
     data_hora     = Column(DateTime, default=datetime.datetime.utcnow)
@@ -27,22 +36,27 @@ class Pedido(Base):
     taxa_ifood    = Column(Float)
     total_liquido = Column(Float)
 
-# ───────────────────────────────────────────────────────────────────
-# 3. Rota principal
+# cria a tabela se ainda não existir
+Base.metadata.create_all(engine)
+
+# ─────────────────────────────────────────────────────────────
+# 3. Rotas
 @app.route("/")
 def index():
     return "Gestor iFood online!"
 
-# ───────────────────────────────────────────────────────────────────
-# 4. Rota de listagem de pedidos
 @app.route("/pedidos")
 def lista_pedidos():
     session = SessionLocal()
-    pedidos = session.query(Pedido).order_by(Pedido.data_hora.desc()).all()
+    pedidos = (
+        session.query(Pedido)
+        .order_by(Pedido.data_hora.desc())
+        .all()
+    )
     return render_template("pedidos.html", pedidos=pedidos)
 
-# ───────────────────────────────────────────────────────────────────
-# 5. Função para validar assinatura do iFood
+# ─────────────────────────────────────────────────────────────
+# 4. Helper de assinatura
 def assinatura_valida(req):
     secret = os.environ["IFOOD_WEBHOOK_SECRET"].encode()
     corpo  = req.data
@@ -50,18 +64,17 @@ def assinatura_valida(req):
     recebida  = req.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
     return hmac.compare_digest(calculada, recebida)
 
-# ───────────────────────────────────────────────────────────────────
-# 6. Rota /webhook  (recebe pedidos do iFood)
+# ─────────────────────────────────────────────────────────────
+# 5. Webhook
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    if not assinatura_valida(request):
+        if not assinatura_valida(request):
         abort(401)
 
     payload = request.get_json(force=True)
     sess = SessionLocal()
 
-        for order in payload.get("orders", []):
-        # ── variáveis do pedido ─────────────────────────
+    for order in payload.get("orders", []):
         order_id = order.get("id")
         created  = order.get("createdAt", datetime.datetime.utcnow().isoformat())
         status   = order.get("status", "PLACED")
@@ -70,17 +83,15 @@ def webhook():
         fee      = order.get("commission", {}).get("amount", 0)
 
         for itm in order.get("items", []):
-            # ── evita duplicar (pedido_id + item) ────────
             if sess.query(Pedido).filter_by(
                 pedido_id=order_id, item=itm.get("name", "")
             ).first():
                 continue
 
-            # ── cria novo registro ───────────────────────
             p = Pedido(
                 pedido_id   = order_id,
                 data_hora   = datetime.datetime.fromisoformat(
-                              created.replace("Z","+00:00")),
+                              created.replace("Z", "+00:00")),
                 status      = status,
                 cliente     = customer,
                 item        = itm.get("name", ""),
