@@ -82,7 +82,55 @@ def pedidos():
 
 # Painel Admin
 admin = Admin(app, name="Painel de Pedidos", template_mode="bootstrap4")
-admin.add_view(ModelView(Pedido, session))
+class SecureModelView(ModelView):
+    def is_accessible(self):
+        return current_user.is_authenticated
+
+    def inaccessible_callback(self, name, **kwargs):
+        return abort(403)
+
+admin.add_view(SecureModelView(Pedido, session))
+
+from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
+
+# Login básico (usuário fixo)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+
+class AdminUser(UserMixin):
+    id = 1
+    username = "Sergio"
+    password = "Semsenha14#"  # Troque por algo mais seguro
+
+    def get_id(self):
+        return str(self.id)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return AdminUser()
+
+# Login via formulário HTML simples
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        if request.form["username"] == "Sergio" and request.form["password"] == "Semsenha14#":
+            login_user(AdminUser())
+            return "Logado com sucesso! <a href='/admin'>Ir para o painel</a>"
+        else:
+            return "Credenciais inválidas."
+    return '''
+    <form method="post">
+        Usuário: <input type="text" name="username"><br>
+        Senha: <input type="password" name="password"><br>
+        <input type="submit" value="Entrar">
+    </form>
+    '''
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return "Saiu com sucesso! <a href='/login'>Login</a>"
 
 # Home
 @app.route("/")
