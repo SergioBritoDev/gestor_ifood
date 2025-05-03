@@ -65,7 +65,6 @@ class ProtectedModelView(ModelView):
         return current_user.is_authenticated
 
 admin.add_view(ProtectedModelView(Pedido, db.session))
-admin.add_view(ModelView(Pedido, db.session))
 admin.add_view(ModelView(Produto, db.session))
 
 # Rotas
