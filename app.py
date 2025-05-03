@@ -1,18 +1,12 @@
-# app.py  – Gestor iFood
-import os, hmac, hashlib, datetime, json
+# app.py  – Gestor iFood (indentação padronizada)
+import os, hmac, hashlib, datetime
 from flask import Flask, render_template, request, abort
-from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
-    String,
-    Float,
-    DateTime,
-)
+from sqlalchemy import create_engine, Column, Integer, String, Float, 
+DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# ─────────────────────────────────────────────────────────────
-# 1. Flask e banco
+# ────────────────────────────── 
+configuração ──────────────────────────────
 app = Flask(__name__)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -20,8 +14,8 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# ─────────────────────────────────────────────────────────────
-# 2. Modelo Pedido
+# ──────────────────────────────── modelos 
+─────────────────────────────────
 class Pedido(Base):
     __tablename__ = "pedidos"
 
@@ -36,39 +30,32 @@ class Pedido(Base):
     taxa_ifood    = Column(Float)
     total_liquido = Column(Float)
 
-# cria a tabela se ainda não existir
 Base.metadata.create_all(engine)
 
-# ─────────────────────────────────────────────────────────────
-# 3. Rotas
+# ──────────────────────────────── rotas 
+───────────────────────────────────
 @app.route("/")
 def index():
     return "Gestor iFood online!"
 
 @app.route("/pedidos")
 def lista_pedidos():
-    session = SessionLocal()
-    pedidos = (
-        session.query(Pedido)
-        .order_by(Pedido.data_hora.desc())
-        .all()
-    )
+    sess = SessionLocal()
+    pedidos = sess.query(Pedido).order_by(Pedido.data_hora.desc()).all()
     return render_template("pedidos.html", pedidos=pedidos)
 
-# ─────────────────────────────────────────────────────────────
-# 4. Helper de assinatura
+# ────────── helper assinatura ──────────
 def assinatura_valida(req):
     secret = os.environ["IFOOD_WEBHOOK_SECRET"].encode()
     corpo  = req.data
-    calculada = hmac.new(secret, corpo, hashlib.sha1).hexdigest()
-    recebida  = req.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
-    return hmac.compare_digest(calculada, recebida)
+    calc   = hmac.new(secret, corpo, hashlib.sha1).hexdigest()
+    recv   = req.headers.get("X-Hub-Signature", "").split("sha1=")[-1]
+    return hmac.compare_digest(calc, recv)
 
-# ─────────────────────────────────────────────────────────────
-# 5. Webhook
+# ────────── webhook ──────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
-        if not assinatura_valida(request):
+    if not assinatura_valida(request):
         abort(401)
 
     payload = request.get_json(force=True)
@@ -76,13 +63,15 @@ def webhook():
 
     for order in payload.get("orders", []):
         order_id = order.get("id")
-        created  = order.get("createdAt", datetime.datetime.utcnow().isoformat())
+        created  = order.get("createdAt", 
+datetime.datetime.utcnow().isoformat())
         status   = order.get("status", "PLACED")
         customer = order.get("customer", {}).get("name", "")
         total    = order.get("total", {}).get("amount", 0)
         fee      = order.get("commission", {}).get("amount", 0)
 
         for itm in order.get("items", []):
+            # ignora duplicata (pedido_id + item)
             if sess.query(Pedido).filter_by(
                 pedido_id=order_id, item=itm.get("name", "")
             ).first():
@@ -104,3 +93,9 @@ def webhook():
 
     sess.commit()
     return "", 204
+
+# ──────────────────────────────── local 
+run ───────────────────────────────
+if __name__ == "__main__":
+    app.run(debug=True)
+
