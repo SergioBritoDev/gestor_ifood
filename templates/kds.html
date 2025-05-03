@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>KDS - Cozinha</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <meta http-equiv="refresh" content="30" />
+</head>
+<body>
+    <h1>Pedidos Pendentes</h1>
+    <ul>
+        {% for p in pedidos %}
+        <li>
+            {{ p.data_hora.strftime('%H:%M') }} - {{ p.cliente }} - {{ p.item }} ({{ p.quantidade }})
+            <form method="POST" action="/atualizar-status/{{ p.id }}">
+                <button type="submit">Marcar como pronto</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <script>
+        const socket = io();
+        socket.on("atualizar_pedidos", () => location.reload());
+    </script>
+</body>
+</html>
+
