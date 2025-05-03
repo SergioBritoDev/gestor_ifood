@@ -1,15 +1,18 @@
 {
   "orders": [
     {
-      "id": "teste-008",
-      "createdAt": "2025-05-03T12:00:00Z",
-      "status": "PLACED",
-      "customer": { "name": "Cliente Simulado" },
+      "order_id": "teste-009",
+      "customer": {
+        "name": "João Teste"
+      },
       "items": [
-        { "name": "Coxinha", "quantity": 2 }
-      ],
-      "total": { "amount": 40 },
-      "commission": { "amount": 8 }
+        {
+          "name": "X-Burguer",
+          "quantity": 2,
+          "total": 25.00
+        }
+      ]
     }
   ]
 }
+
