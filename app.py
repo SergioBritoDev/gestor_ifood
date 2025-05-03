@@ -68,7 +68,24 @@ admin.add_view(ProtectedModelView(Pedido, db.session))
 admin.add_view(ModelView(Produto, db.session))
 
 # Rotas
-@app.route("/")
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    total_pedidos = Pedido.query.count()
+    total_bruto = db.session.query(db.func.sum(Pedido.total_bruto)).scalar() or 0
+    total_liquido = db.session.query(db.func.sum(Pedido.total_liquido)).scalar() or 0
+
+    produto_mais_vendido = db.session.query(
+        Pedido.item, db.func.sum(Pedido.quantidade).label("total")
+    ).group_by(Pedido.item).order_by(db.desc("total")).first()
+
+    produto_mais_vendido = produto_mais_vendido[0] if produto_mais_vendido else "Nenhum"
+
+    return render_template("dashboard.html",
+                           total_pedidos=total_pedidos,
+                           total_bruto=f"{total_bruto:.2f}",
+                           total_liquido=f"{total_liquido:.2f}",
+                           produto_mais_vendido=produto_mais_vendido)
 def index():
     return "Gestor iFood online!"
 
