@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Pedidos | Gestor iFood</title>
+<style>
+ body {font-family: Arial, sans-serif; margin:20px;}
+ table {border-collapse:collapse;width:100%;}
+ th,td {border:1px solid #ccc;padding:6px 10px;text-align:left;}
+ th {background:#f3f3f3;}
+</style>
+</head>
+<body>
+<h2>Pedidos recebidos</h2>
+<table>
+  <tr>
+   <th>Data/Hora</th><th>Status</th><th>Cliente</th>
+   <th>Item</th><th>Qtd</th><th>Total (R$)</th>
+  </tr>
+  {% for p in pedidos %}
+  <tr>
+    <td>{{ p.data_hora.strftime('%d/%m %H:%M') }}</td>
+    <td>{{ p.status }}</td>
+    <td>{{ p.cliente }}</td>
+    <td>{{ p.item }}</td>
+    <td>{{ p.quantidade }}</td>
+    <td>{{ "%.2f"|format(p.total_liquido or 0) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</body>
+</html>
+
