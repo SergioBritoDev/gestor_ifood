@@ -2,8 +2,7 @@ import os
 import hmac
 import hashlib
 from datetime import datetime
-from flask import Flask, request, redirect, url_for, render_template, 
-session, abort, jsonify
+from flask import Flask, request, redirect, url_for, render_template, session, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
