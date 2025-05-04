@@ -1,62 +1,66 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>KDS - Pedidos na Cozinha</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <title>KDS</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const socket = io();
+
+            socket.on("novo_pedido", (pedido) => {
+                location.reload();
+            });
+
+            socket.on("pedido_removido", (data) => {
+                document.getElementById("pedido-" + data.id)?.remove();
+            });
+
+            window.finalizarPedido = (id) => {
+                socket.emit("pedido_finalizado", { id });
+            };
+
+            window.abrirModal = (id, item) => {
+                document.getElementById("modal-titulo").innerText = item;
+                document.getElementById("modal-descricao").innerText = "Instruções de montagem para: " + item;
+                document.getElementById("modal").style.display = "block";
+            };
+
+            window.fecharModal = () => {
+                document.getElementById("modal").style.display = "none";
+            };
+        });
+    </script>
+    <style>
+        body { font-family: sans-serif; background: #f9f9f9; }
+        .pedido { background: white; border: 1px solid #ccc; padding: 15px; margin: 10px; cursor: pointer; }
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 5px; width: 400px;
+        }
+    </style>
 </head>
 <body>
-    <div class="container-fluid mt-3">
-        <h2 class="text-center mb-4">KDS - Pedidos Pendentes</h2>
-        <div id="pedidos" class="row"></div>
+    <h1>Pedidos Pendentes</h1>
+    {% for pedido in pedidos %}
+    <div class="pedido" id="pedido-{{ pedido.id }}" onclick="abrirModal('{{ pedido.id }}', '{{ pedido.item }}')">
+        <strong>{{ pedido.item }}</strong><br>
+        Cliente: {{ pedido.cliente }}<br>
+        Quantidade: {{ pedido.quantidade }}<br>
+        <button onclick="event.stopPropagation(); finalizarPedido({{ pedido.id }})">Finalizar</button>
     </div>
+    {% endfor %}
 
-    <script>
-        const socket = io();
-
-        function renderPedido(pedido) {
-            return `
-                <div class="col-md-4 mb-3" id="pedido-${pedido.id}">
-                    <div class="card border-primary">
-                        <div class="card-header">
-                            <strong>Pedido ID:</strong> ${pedido.pedido_id}
-                        </div>
-                        <div class="card-body">
-                            <p><strong>Cliente:</strong> ${pedido.cliente}</p>
-                            <p><strong>Item:</strong> ${pedido.item}</p>
-                            <p><strong>Quantidade:</strong> ${pedido.quantidade}</p>
-                            <p><strong>Total:</strong> R$ ${pedido.total_liquido}</p>
-                            <button class="btn btn-success btn-block" onclick="marcarPronto(${pedido.id})">Marcar como pronto</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function marcarPronto(id) {
-            fetch(`/pedido/${id}/pronto`, { method: "POST" }).then(() => {
-                document.getElementById(`pedido-${id}`).remove();
-            });
-        }
-
-        function carregarPedidos() {
-            fetch("/api/pedidos")
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById("pedidos");
-                    container.innerHTML = "";
-                    data.forEach(p => container.innerHTML += renderPedido(p));
-                });
-        }
-
-        socket.on("novo_pedido", () => {
-            carregarPedidos();
-        });
-
-        // Inicial
-        carregarPedidos();
-    </script>
+    <div id="modal" class="modal" onclick="fecharModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2 id="modal-titulo"></h2>
+            <img src="https://via.placeholder.com/300x200.png?text=Foto+do+procedimento" style="width:100%; margin-bottom: 10px;">
+            <p id="modal-descricao"></p>
+            <button onclick="fecharModal()">Fechar</button>
+        </div>
+    </div>
 </body>
 </html>
 

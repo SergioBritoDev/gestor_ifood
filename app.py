@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime
 from flask import Flask, request, redirect, url_for, render_template, session, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_admin import Admin
+from flask_admin import Admin, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_socketio import SocketIO, emit
@@ -35,7 +35,7 @@ class Produto(db.Model):
 
 class Pedido(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    pedido_id = db.Column(db.String(100))
+    pedido_id = db.Column(db.String(100), unique=True)
     data_hora = db.Column(db.DateTime, default=datetime.utcnow)
     cliente = db.Column(db.String(100))
     item = db.Column(db.String(255))
@@ -56,8 +56,7 @@ def login():
     if request.method == "POST":
         nome = request.form["username"]
         senha = request.form["password"]
-        user = AdminUser.query.filter_by(username=nome, 
-password=senha).first()
+        user = AdminUser.query.filter_by(username=nome, password=senha).first()
         if user:
             login_user(user)
             return redirect(url_for("admin.index"))
@@ -70,15 +69,20 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-# ADMIN
+# ADMIN CUSTOM
 class ProtectedModelView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated
 
+class PedidoAdminView(ProtectedModelView):
+    can_delete = True
+    column_list = ("pedido_id", "cliente", "item", "quantidade", "status", "data_hora")
+    form_columns = ("pedido_id", "cliente", "item", "quantidade", "total_liquido", "status")
+
 admin = Admin(app, name="Gestor iFood", template_mode="bootstrap3")
 admin.add_view(ProtectedModelView(AdminUser, db.session))
 admin.add_view(ProtectedModelView(Produto, db.session))
-admin.add_view(ProtectedModelView(Pedido, db.session))
+admin.add_view(PedidoAdminView(Pedido, db.session))
 
 # WEBHOOK
 @app.route("/webhook", methods=["POST"])
@@ -93,6 +97,10 @@ def webhook():
         return "Assinatura inválida", 401
 
     pedido_json = request.json
+
+    if Pedido.query.filter_by(pedido_id=pedido_json.get("id")).first():
+        return "Pedido já existe", 400
+
     novo = Pedido(
         pedido_id=pedido_json.get("id", "sem_id"),
         cliente=pedido_json.get("cliente", "desconhecido"),
@@ -113,6 +121,19 @@ def webhook():
 
     return "OK", 200
 
+# API PEDIDOS
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([{
+        "id": p.id,
+        "cliente": p.cliente,
+        "item": p.item,
+        "quantidade": p.quantidade,
+        "total_liquido": p.total_liquido,
+        "data_hora": p.data_hora.isoformat()
+    } for p in pedidos])
+
 # KDS
 @app.route("/kds")
 def kds():
@@ -126,19 +147,6 @@ def finalizar_pedido(data):
         pedido.status = "finalizado"
         db.session.commit()
         emit("pedido_removido", {"id": pedido.id}, broadcast=True)
-
-# NOVA ROTA: API para retornar os pedidos pendentes (usada pelo KDS)
-@app.route("/api/pedidos")
-def api_pedidos():
-    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([{
-        "id": p.id,
-        "cliente": p.cliente,
-        "item": p.item,
-        "quantidade": p.quantidade,
-        "total_liquido": p.total_liquido,
-        "data_hora": p.data_hora.isoformat()
-    } for p in pedidos])
 
 # RODAR
 if __name__ == "__main__":
