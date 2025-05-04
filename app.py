@@ -2,7 +2,6 @@ import os
 import hmac
 import hashlib
 from datetime import datetime
-
 from flask import Flask, request, redirect, url_for, render_template, 
 session, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -12,16 +11,16 @@ from flask_login import LoginManager, UserMixin, login_user,
 login_required, logout_user, current_user
 from flask_socketio import SocketIO, emit
 
-# App e configurações
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "default-secret")
+
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 socketio = SocketIO(app, async_mode="threading")
 
-# Modelos
+# MODELOS
 class AdminUser(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), nullable=False, unique=True)
@@ -46,7 +45,7 @@ class Pedido(db.Model):
     total_liquido = db.Column(db.Float)
     status = db.Column(db.String(50), default="pendente")
 
-# Login
+# LOGIN
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -73,7 +72,7 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-# Admin protegido
+# ADMIN
 class ProtectedModelView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated
@@ -83,7 +82,7 @@ admin.add_view(ProtectedModelView(AdminUser, db.session))
 admin.add_view(ProtectedModelView(Produto, db.session))
 admin.add_view(ProtectedModelView(Pedido, db.session))
 
-# Webhook iFood
+# WEBHOOK
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Hub-Signature")
@@ -91,10 +90,6 @@ def webhook():
     payload = request.data
     hash_obj = hmac.new(secret.encode(), payload, hashlib.sha1)
     expected_signature = f"sha1={hash_obj.hexdigest()}"
-
-    print("Assinatura recebida:", signature)
-    print("Assinatura esperada:", expected_signature)
-    print("Corpo recebido:", payload.decode())
 
     if not hmac.compare_digest(signature or "", expected_signature):
         return "Assinatura inválida", 401
@@ -120,74 +115,12 @@ def webhook():
 
     return "OK", 200
 
-# API para o KDS
-@app.route("/api/pedidos")
-def api_pedidos():
-    pedidos = 
-Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([
-        {
-            "id": p.id,
-            "cliente": p.cliente,
-            "item": p.item,
-            "quantidade": p.quantidade,
-            "data_hora": p.data_hora.isoformat()
-        }
-        for p in pedidos
-    ])
-
-# Página do KDS
+# KDS
 @app.route("/kds")
 def kds():
-    return render_template("kds.html")
-from flask import jsonify
-@app.route("/api/pedidos")
-def api_pedidos():
     pedidos = 
 Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([
-        {
-            "id": p.id,
-            "pedido_id": p.pedido_id,
-            "cliente": p.cliente,
-            "item": p.item,
-            "quantidade": p.quantidade,
-            "total_liquido": p.total_liquido,
-            "data_hora": p.data_hora.isoformat()
-        } for p in pedidos
-    ])
-@app.route("/api/pedidos")
-def api_pedidos():
-    pedidos = 
-Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([
-        {
-            "id": p.id,
-            "pedido_id": p.pedido_id,
-            "cliente": p.cliente,
-            "item": p.item,
-            "quantidade": p.quantidade,
-            "total_liquido": p.total_liquido,
-            "data_hora": p.data_hora.isoformat()
-        } for p in pedidos
-    ])
-
-
-@app.route("/api/pedidos")
-def api_pedidos():
-    pedidos = 
-Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([
-        {
-            "id": p.id,
-            "pedido_id": p.pedido_id,
-            "cliente": p.cliente,
-            "item": p.item,
-            "quantidade": p.quantidade,
-            "total_liquido": p.total_liquido,
-            "data_hora": p.data_hora.isoformat()
-        } for p in pedidos
-    ])
+    return render_template("kds.html", pedidos=pedidos)
 
 @socketio.on("pedido_finalizado")
 def finalizar_pedido(data):
@@ -197,7 +130,21 @@ def finalizar_pedido(data):
         db.session.commit()
         emit("pedido_removido", {"id": pedido.id}, broadcast=True)
 
-# Inicialização
+# NOVA ROTA: API para retornar os pedidos pendentes (usada pelo KDS)
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = 
+Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([{
+        "id": p.id,
+        "cliente": p.cliente,
+        "item": p.item,
+        "quantidade": p.quantidade,
+        "total_liquido": p.total_liquido,
+        "data_hora": p.data_hora.isoformat()
+    } for p in pedidos])
+
+# RODAR
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
