@@ -1,49 +1,55 @@
-from flask import Flask, request, render_template, redirect, url_for, session
-from flask_sqlalchemy import SQLAlchemy
-from flask_admin import Admin
-from flask_admin.contrib.sqla import ModelView
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from flask_socketio import SocketIO, emit
-from datetime import datetime
 import os
 import hmac
 import hashlib
 import json
+from datetime import datetime
+
+from flask import Flask, request, redirect, url_for, render_template, session, abort
+from flask_sqlalchemy import SQLAlchemy
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-app.secret_key = "supersecret"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "default-secret")
+
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 db = SQLAlchemy(app)
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode="threading")  # Usando threading por compatibilidade
 
-login_manager = LoginManager(app)
+# MODELOS
 
-### MODELOS
 class AdminUser(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(80), nullable=False)
-
-class Pedido(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    pedido_id = db.Column(db.String, unique=True)
-    data_hora = db.Column(db.DateTime)
-    cliente = db.Column(db.String)
-    item = db.Column(db.String)
-    quantidade = db.Column(db.Integer)
-    total_liquido = db.Column(db.Float)
-    status = db.Column(db.String, default="pendente")
+    username = db.Column(db.String(64), nullable=False, unique=True)
+    password = db.Column(db.String(128), nullable=False)
 
 class Produto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(120))
-    categoria = db.Column(db.String(120))
+    nome = db.Column(db.String(100), nullable=False)
+    categoria = db.Column(db.String(100))
     descricao = db.Column(db.Text)
-    imagem = db.Column(db.String(300))
+    imagem = db.Column(db.String(255))
     ficha_tecnica = db.Column(db.Text)
-    pdv = db.Column(db.String(120))
+    pdv = db.Column(db.String(100))
 
-### LOGIN
+class Pedido(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.String(100))
+    data_hora = db.Column(db.DateTime, default=datetime.utcnow)
+    cliente = db.Column(db.String(100))
+    item = db.Column(db.String(255))
+    quantidade = db.Column(db.Integer)
+    total_liquido = db.Column(db.Float)
+    status = db.Column(db.String(50), default="pendente")
+
+# LOGIN
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+
 @login_manager.user_loader
 def load_user(user_id):
     return AdminUser.query.get(int(user_id))
@@ -56,85 +62,80 @@ def login():
         user = AdminUser.query.filter_by(username=nome, password=senha).first()
         if user:
             login_user(user)
-            return redirect("/admin")
-        return "Usuário ou senha inválidos"
+            return redirect(url_for("admin.index"))
+        return "Usuário ou senha inválidos", 401
     return render_template("login.html")
 
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
-    return redirect("/login")
+    return redirect(url_for("login"))
 
-### FLASK ADMIN
-admin = Admin(app, name="Painel", template_mode="bootstrap3")
-admin.add_view(ModelView(Pedido, db.session))
-admin.add_view(ModelView(Produto, db.session))
-admin.add_view(ModelView(AdminUser, db.session))
+# PAINEL ADMIN
+class ProtectedModelView(ModelView):
+    def is_accessible(self):
+        return current_user.is_authenticated
 
-### ROTAS KDS
-@app.route("/kds")
-def kds():
-    pedidos = Pedido.query.filter(Pedido.status == "pendente").order_by(Pedido.data_hora.desc()).all()
-    return render_template("kds.html", pedidos=pedidos)
+admin = Admin(app, name="Gestor iFood", template_mode="bootstrap3")
+admin.add_view(ProtectedModelView(AdminUser, db.session))
+admin.add_view(ProtectedModelView(Produto, db.session))
+admin.add_view(ProtectedModelView(Pedido, db.session))
 
-@app.route("/atualizar-status/<int:pedido_id>", methods=["POST"])
-def atualizar_status(pedido_id):
-    pedido = Pedido.query.get(pedido_id)
-    if pedido:
-        pedido.status = "pronto"
-        db.session.commit()
-        socketio.emit("atualizar_pedidos", broadcast=True)
-    return ("", 204)
-
-### ROTAS PEDIDOS
-@app.route("/pedidos")
-def listar_pedidos():
-    pedidos = Pedido.query.order_by(Pedido.data_hora.desc()).all()
-    return render_template("pedidos.html", pedidos=pedidos)
-
+# WEBHOOK IFood
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    payload = request.get_data()
-    signature = request.headers.get("X-Hub-Signature", "").replace("sha1=", "")
-    secret = b"Semsenha14#"
+    signature = request.headers.get("X-Hub-Signature")
+    secret = os.environ.get("IFOOD_SECRET", "")
+    payload = request.data
+    hash_obj = hmac.new(secret.encode(), payload, hashlib.sha1)
+    expected_signature = f"sha1={hash_obj.hexdigest()}"
 
-    expected_signature = hmac.new(secret, payload, hashlib.sha1).hexdigest()
-
-    print("🔐 Assinatura recebida:", signature)
-    print("✅ Assinatura esperada:", expected_signature)
-    print("📦 Payload recebido:", payload.decode("utf-8"))
-
-    if not hmac.compare_digest(signature, expected_signature):
+    print("Assinatura recebida:", signature)
+    print("Assinatura esperada:", expected_signature)
+    print("Corpo recebido:", payload.decode())
+    if not hmac.compare_digest(signature or "", expected_signature):
         return "Assinatura inválida", 401
 
-    data = json.loads(payload)
-
-    for order in data.get("orders", []):
-        order_id = order.get("order_id")
-        cliente = order.get("customer", {}).get("name", "Cliente")
-        for item in order.get("items", []):
-            nome_item = item.get("name")
-            quantidade = item.get("quantity", 1)
-            total = item.get("total", 0)
-
-            novo_pedido = Pedido(
-                pedido_id=order_id,
-                cliente=cliente,
-                item=nome_item,
-                quantidade=quantidade,
-                total_liquido=total,
-                status="pendente"
-            )
-            db.session.add(novo_pedido)
-
+    pedido_json = request.json
+    # aqui você extrai os dados reais, este exemplo é simplificado
+    novo = Pedido(
+        pedido_id=pedido_json.get("id", "sem_id"),
+        cliente=pedido_json.get("cliente", "desconhecido"),
+        item=pedido_json.get("item", "item desconhecido"),
+        quantidade=pedido_json.get("quantidade", 1),
+        total_liquido=pedido_json.get("total_liquido", 0.0),
+        status="pendente"
+    )
+    db.session.add(novo)
     db.session.commit()
 
-    # Emite para o KDS
-    socketio.emit("novo_pedido", {"pedido_id": order_id})
-    return "", 204
+    socketio.emit("novo_pedido", {
+        "id": novo.id,
+        "cliente": novo.cliente,
+        "item": novo.item,
+        "quantidade": novo.quantidade
+    })
 
-### EXECUÇÃO
+    return "OK", 200
+
+# KDS
+@app.route("/kds")
+def kds():
+    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return render_template("kds.html", pedidos=pedidos)
+
+@socketio.on("pedido_finalizado")
+def finalizar_pedido(data):
+    pedido = Pedido.query.get(data.get("id"))
+    if pedido:
+        pedido.status = "finalizado"
+        db.session.commit()
+        emit("pedido_removido", {"id": pedido.id}, broadcast=True)
+
+# RODAR
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    with app.app_context():
+        db.create_all()
+    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
