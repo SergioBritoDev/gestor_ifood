@@ -116,8 +116,7 @@ def webhook():
 # KDS
 @app.route("/kds")
 def kds():
-    pedidos = 
-Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
     return render_template("kds.html", pedidos=pedidos)
 
 @socketio.on("pedido_finalizado")
