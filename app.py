@@ -130,8 +130,7 @@ def finalizar_pedido(data):
 # NOVA ROTA: API para retornar os pedidos pendentes (usada pelo KDS)
 @app.route("/api/pedidos")
 def api_pedidos():
-    pedidos = 
-Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
     return jsonify([{
         "id": p.id,
         "cliente": p.cliente,
