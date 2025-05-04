@@ -1,27 +1,27 @@
 import os
 import hmac
 import hashlib
-import json
 from datetime import datetime
 
-from flask import Flask, request, redirect, url_for, render_template, session, abort
+from flask import Flask, request, redirect, url_for, render_template, 
+session, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_login import LoginManager, UserMixin, login_user, 
+login_required, logout_user, current_user
 from flask_socketio import SocketIO, emit
 
+# App e configurações
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "default-secret")
-
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
-socketio = SocketIO(app, async_mode="threading")  # Usando threading por compatibilidade
+socketio = SocketIO(app, async_mode="threading")
 
-# MODELOS
-
+# Modelos
 class AdminUser(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), nullable=False, unique=True)
@@ -46,7 +46,7 @@ class Pedido(db.Model):
     total_liquido = db.Column(db.Float)
     status = db.Column(db.String(50), default="pendente")
 
-# LOGIN
+# Login
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -59,7 +59,8 @@ def login():
     if request.method == "POST":
         nome = request.form["username"]
         senha = request.form["password"]
-        user = AdminUser.query.filter_by(username=nome, password=senha).first()
+        user = AdminUser.query.filter_by(username=nome, 
+password=senha).first()
         if user:
             login_user(user)
             return redirect(url_for("admin.index"))
@@ -72,7 +73,7 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-# PAINEL ADMIN
+# Admin protegido
 class ProtectedModelView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated
@@ -82,7 +83,7 @@ admin.add_view(ProtectedModelView(AdminUser, db.session))
 admin.add_view(ProtectedModelView(Produto, db.session))
 admin.add_view(ProtectedModelView(Pedido, db.session))
 
-# WEBHOOK IFood
+# Webhook iFood
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Hub-Signature")
@@ -94,11 +95,11 @@ def webhook():
     print("Assinatura recebida:", signature)
     print("Assinatura esperada:", expected_signature)
     print("Corpo recebido:", payload.decode())
+
     if not hmac.compare_digest(signature or "", expected_signature):
         return "Assinatura inválida", 401
 
     pedido_json = request.json
-    # aqui você extrai os dados reais, este exemplo é simplificado
     novo = Pedido(
         pedido_id=pedido_json.get("id", "sem_id"),
         cliente=pedido_json.get("cliente", "desconhecido"),
@@ -119,11 +120,74 @@ def webhook():
 
     return "OK", 200
 
-# KDS
+# API para o KDS
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = 
+Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([
+        {
+            "id": p.id,
+            "cliente": p.cliente,
+            "item": p.item,
+            "quantidade": p.quantidade,
+            "data_hora": p.data_hora.isoformat()
+        }
+        for p in pedidos
+    ])
+
+# Página do KDS
 @app.route("/kds")
 def kds():
-    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return render_template("kds.html", pedidos=pedidos)
+    return render_template("kds.html")
+from flask import jsonify
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = 
+Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([
+        {
+            "id": p.id,
+            "pedido_id": p.pedido_id,
+            "cliente": p.cliente,
+            "item": p.item,
+            "quantidade": p.quantidade,
+            "total_liquido": p.total_liquido,
+            "data_hora": p.data_hora.isoformat()
+        } for p in pedidos
+    ])
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = 
+Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([
+        {
+            "id": p.id,
+            "pedido_id": p.pedido_id,
+            "cliente": p.cliente,
+            "item": p.item,
+            "quantidade": p.quantidade,
+            "total_liquido": p.total_liquido,
+            "data_hora": p.data_hora.isoformat()
+        } for p in pedidos
+    ])
+
+
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = 
+Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([
+        {
+            "id": p.id,
+            "pedido_id": p.pedido_id,
+            "cliente": p.cliente,
+            "item": p.item,
+            "quantidade": p.quantidade,
+            "total_liquido": p.total_liquido,
+            "data_hora": p.data_hora.isoformat()
+        } for p in pedidos
+    ])
 
 @socketio.on("pedido_finalizado")
 def finalizar_pedido(data):
@@ -133,9 +197,10 @@ def finalizar_pedido(data):
         db.session.commit()
         emit("pedido_removido", {"id": pedido.id}, broadcast=True)
 
-# RODAR
+# Inicialização
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 
+5000)))
 
