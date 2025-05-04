@@ -1,3 +1,4 @@
+
 import os
 import hmac
 import hashlib
@@ -8,7 +9,6 @@ from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_socketio import SocketIO, emit
-from sqlalchemy import func
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "default-secret")
@@ -80,6 +80,11 @@ admin.add_view(ProtectedModelView(AdminUser, db.session))
 admin.add_view(ProtectedModelView(Produto, db.session))
 admin.add_view(ProtectedModelView(Pedido, db.session))
 
+# HOME
+@app.route("/")
+def home():
+    return render_template("home.html")
+
 # WEBHOOK
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -113,6 +118,19 @@ def webhook():
 
     return "OK", 200
 
+# API para o KDS
+@app.route("/api/pedidos")
+def api_pedidos():
+    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
+    return jsonify([{
+        "id": p.id,
+        "cliente": p.cliente,
+        "item": p.item,
+        "quantidade": p.quantidade,
+        "total_liquido": p.total_liquido,
+        "data_hora": p.data_hora.isoformat()
+    } for p in pedidos])
+
 # KDS
 @app.route("/kds")
 def kds():
@@ -126,24 +144,6 @@ def finalizar_pedido(data):
         pedido.status = "finalizado"
         db.session.commit()
         emit("pedido_removido", {"id": pedido.id}, broadcast=True)
-
-@app.route("/api/pedidos")
-def api_pedidos():
-    pedidos = Pedido.query.filter_by(status="pendente").order_by(Pedido.data_hora.desc()).all()
-    return jsonify([{
-        "id": p.id,
-        "cliente": p.cliente,
-        "item": p.item,
-        "quantidade": p.quantidade,
-        "total_liquido": p.total_liquido,
-        "data_hora": p.data_hora.isoformat()
-    } for p in pedidos])
-
-# RELATÓRIOS
-@app.route("/relatorios")
-@login_required
-def relatorios():
-    return render_template("relatorios.html")
 
 # RODAR
 if __name__ == "__main__":
